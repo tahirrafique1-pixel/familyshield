@@ -1,28 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Family Shield GPS</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-:root { --glass: rgba(255, 255, 255, 0.08); --accent: #00f2ff; --blur: blur(15px); }
+:root { --glass: rgba(255, 255, 255, 0.12); --accent: #00f2ff; --blur: blur(20px); }
 body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #05050a; color: white; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
-#map { flex: 1; width: 100%; z-index: 1; }
 
-/* UI Elements */
-.overlay { position: fixed; inset: 0; z-index: 5000; background: rgba(5,5,10,0.95); backdrop-filter: var(--blur); display: flex; align-items: center; justify-content: center; padding: 20px; }
-.card { background: var(--glass); padding: 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); width: 100%; max-width: 320px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
-input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: white; box-sizing: border-box; outline: none; }
+/* The Map */
+#map { flex: 1; width: 100%; z-index: 10; }
+
+/* FIXED RECTIFICATION: Admin Gear Button */
+#admin-entry-btn {
+position: fixed;
+bottom: 30px;
+right: 30px;
+z-index: 9999; /* Forced to the absolute top */
+width: 55px;
+height: 55px;
+border-radius: 50%;
+background: rgba(0, 242, 255, 0.2);
+backdrop-filter: var(--blur);
+-webkit-backdrop-filter: var(--blur);
+color: white;
+border: 2px solid var(--accent);
+font-size: 24px;
+display: flex;
+align-items: center;
+justify-content: center;
+cursor: pointer;
+box-shadow: 0 0 20px rgba(0, 242, 255, 0.4);
+transition: transform 0.2s;
+}
+#admin-entry-btn:active { transform: scale(0.9); }
+
+/* Overlays */
+.overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(5,5,10,0.95); backdrop-filter: var(--blur); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.card { background: var(--glass); padding: 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); width: 100%; max-width: 320px; text-align: center; }
+
+#admin-panel { position: fixed; inset: 0; z-index: 10001; background: #05050a; overflow-y: auto; padding: 20px; display: none; }
+
+input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: white; box-sizing: border-box; }
 button { width: 100%; padding: 12px; background: var(--accent); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; color: #05050a; margin-top: 10px; }
 
-/* Admin Section */
-#admin-panel { position: fixed; inset: 0; z-index: 6000; background: #05050a; overflow-y: auto; padding: 20px; display: none; }
-.user-row { background: var(--glass); padding: 15px; border-radius: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(255,255,255,0.05); }
-.u-img { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 1px solid var(--accent); }
-.btn-group { display: flex; gap: 5px; }
-.btn-sm { padding: 6px; font-size: 0.65rem; border-radius: 5px; width: auto; }
-
-#admin-entry-btn { position: fixed; bottom: 20px; right: 20px; z-index: 4000; width: 50px; height: 50px; border-radius: 50%; background: var(--glass); color: white; border: 1px solid rgba(255,255,255,0.2); font-size: 1.2rem; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.user-row { background: var(--glass); padding: 12px; border-radius: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.u-img { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 1px solid var(--accent); }
 .hidden { display: none !important; }
 </style>
 </head>
@@ -31,8 +54,8 @@ button { width: 100%; padding: 12px; background: var(--accent); border: none; bo
 <div id="admin-entry-btn" onclick="showAdminLogin()">⚙️</div>
 
 <div id="overlay" class="overlay">
-<div class="card" id="user-box">
-<h2 style="color:var(--accent); margin-top:0;">Family Shield</h2>
+<div class="card">
+<h2 style="color:var(--accent); margin:0 0 10px 0;">Family Shield</h2>
 <div id="reg-form">
 <input type="file" id="f-photo" accept="image/*" onchange="loadImg(this)">
 <input type="text" id="f-name" placeholder="Full Name">
@@ -44,11 +67,10 @@ button { width: 100%; padding: 12px; background: var(--accent); border: none; bo
 </div>
 
 <div id="admin-panel">
-<div style="display:flex; justify-content: space-between; align-items: center;">
-<h2 style="color:var(--accent)">Admin Console</h2>
-<button onclick="closeAdmin()" style="width:auto; padding:5px 15px; background:#444; color:white;">Exit</button>
+<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+<h2 style="color:var(--accent); margin:0;">Admin Console</h2>
+<button onclick="closeAdmin()" style="width:auto; padding:8px 20px; background:#333; color:white;">Back</button>
 </div>
-<hr style="border:0; border-top:1px solid #333; margin: 20px 0;">
 <div id="admin-list">Loading members...</div>
 </div>
 
@@ -56,11 +78,11 @@ button { width: 100%; padding: 12px; background: var(--accent); border: none; bo
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const API = "https://script.google.com/macros/s/AKfycbyKSJeuJsI8VCqp93YOp8U0C3bZ_ZhC606JOo1p4D-gtsH7xg1P9z1GJkZ8bVXH3U2SjA/exec";
+const API = "https://script.google.com/macros/s/AKfycbyKSJeuJsI8VCqp93YOp8U0C3bZ_ZhC606JOo1p4D-gtsH7xg1P9z1GJkZ8bVXH3U2SjA/exec"; // Ensure this is updated
 const ADMIN_PIN = "786605";
-let user = null, photoData = "", isApproved = false;
+let user = null, photoData = "";
 
-const map = L.map('map', { zoomControl: false }).setView([30.37, 69.34], 5);
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([30.37, 69.34], 5);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
 function loadImg(el) {
@@ -81,7 +103,7 @@ sync();
 function register() {
 const name = document.getElementById('f-name').value;
 const phone = document.getElementById('f-phone').value;
-if(!name || !phone || !photoData) return alert("Photo, Name, and Phone are required.");
+if(!name || !phone || !photoData) return alert("Please provide Photo, Name, and Phone.");
 user = { name, phone, photo: photoData };
 localStorage.setItem('shield_auth', JSON.stringify({name, phone}));
 document.getElementById('reg-form').classList.add('hidden');
@@ -92,24 +114,21 @@ async function sync() {
 let lat = 0, lng = 0;
 if (window.AppInventor) {
 const gps = window.AppInventor.getWebViewString().split(",");
-lat = parseFloat(gps[0]); lng = parseFloat(gps[1]);
+if(gps.length === 2) { lat = parseFloat(gps[0]); lng = parseFloat(gps[1]); }
 }
 try {
 const res = await fetch(API, { method: 'POST', body: JSON.stringify({...user, lat, lng}) });
 const data = await res.json();
-
 if (data.status === "Approved") {
 document.getElementById('overlay').classList.add('hidden');
-isApproved = true;
 } else {
-document.getElementById('msg').innerText = "Account Status: " + (data.status || "Pending Approval");
+document.getElementById('msg').innerText = "Status: " + (data.status || "Pending Approval");
 }
-user.photo = null; // Save bandwidth
+user.photo = null;
 } catch(e) { console.warn("Syncing..."); }
 setTimeout(sync, 15000);
 }
 
-// --- Admin Functions ---
 function showAdminLogin() {
 const pin = prompt("Enter Admin PIN:");
 if (pin === ADMIN_PIN) {
@@ -127,21 +146,19 @@ const res = await fetch(API);
 const users = await res.json();
 const list = document.getElementById('admin-list');
 list.innerHTML = '';
-
 users.forEach(u => {
 const [name, phone, email, lat, lng, time, photo, status] = u;
 const div = document.createElement('div');
 div.className = 'user-row';
 div.innerHTML = `
-<img src="${photo}" class="u-img">
+<img src="${photo || ''}" class="u-img" onerror="this.src='https://via.placeholder.com/50'">
 <div style="flex:1">
-<div style="font-weight:bold">${name}</div>
-<div style="font-size:0.7rem; opacity:0.6">${phone} | ${status}</div>
+<div style="font-weight:bold; font-size:0.9rem;">${name}</div>
+<div style="font-size:0.7rem; opacity:0.6">${status} | ${phone}</div>
 </div>
-<div class="btn-group">
-<button class="btn-sm" style="background:#4caf50" onclick="updateUser('${phone}','Approved')">Approve</button>
-<button class="btn-sm" style="background:#ff9800" onclick="updateUser('${phone}','Locked')">Lock</button>
-<button class="btn-sm" style="background:#f44336" onclick="updateUser('${phone}','Rejected')">Reject</button>
+<div style="display:flex; gap:4px;">
+<button style="width:auto; padding:5px; font-size:10px; background:#4caf50;" onclick="updateUser('${phone}','Approved')">OK</button>
+<button style="width:auto; padding:5px; font-size:10px; background:#f44336;" onclick="updateUser('${phone}','Rejected')">X</button>
 </div>
 `;
 list.appendChild(div);
