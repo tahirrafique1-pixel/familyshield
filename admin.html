@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shield Admin Console</title>
+<style>
+body { background: #05050a; color: white; font-family: sans-serif; padding: 20px; }
+.user-row { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 15px; border: 1px solid rgba(255,255,255,0.1); }
+.u-img { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; }
+.u-info { flex: 1; }
+.u-status { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: #444; }
+.btn-group { display: flex; gap: 5px; }
+button { border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 0.7rem; font-weight: bold; }
+.btn-appr { background: #4caf50; color: white; }
+.btn-rej { background: #f44336; color: white; }
+.btn-lock { background: #ff9800; color: white; }
+</style>
+</head>
+<body>
+<h1>Member Management</h1>
+<div id="list">Loading users...</div>
+
+<script>
+const API = "https://script.google.com/macros/s/AKfycbwQV3uTo4INVcNZNaCKMZQ_KVeAq82P6L9Loxto1aXEowBfvT8Q6Wj4xF7CoqqY5LSlBQ/exec";
+
+async function load() {
+const res = await fetch(API);
+const users = await res.json();
+const container = document.getElementById('list');
+container.innerHTML = '';
+
+users.forEach(u => {
+const [name, phone, email, lat, lng, time, photo, status] = u;
+const div = document.createElement('div');
+div.className = 'user-row';
+div.innerHTML = `
+<img src="${photo}" class="u-img">
+<div class="u-info">
+<strong>${name}</strong> <span class="u-status">${status}</span><br>
+<small>${phone}</small>
+</div>
+<div class="btn-group">
+<button class="btn-appr" onclick="action('${phone}', 'Approved')">APPROVE</button>
+<button class="btn-rej" onclick="action('${phone}', 'Rejected')">REJECT</button>
+<button class="btn-lock" onclick="action('${phone}', 'Locked')">LOCK</button>
+</div>
+`;
+container.appendChild(div);
+});
+}
+
+async function action(phone, newStatus) {
+await fetch(API, {
+method: 'POST',
+body: JSON.stringify({ action: "updateStatus", phone, newStatus })
+});
+load();
+}
+load();
+</script>
+</body>
+</html>
