@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Shield Connect</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --glass: rgba(255, 255, 255, 0.1); --accent: #00f2ff; --blur: blur(20px); }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #05050a; color: white; height: 100vh; overflow: hidden; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+        .overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(5,5,10,0.9); backdrop-filter: var(--blur); display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .card { background: var(--glass); padding: 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); width: 100%; max-width: 320px; text-align: center; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: var(--accent); border: none; border-radius: 10px; font-weight: bold; cursor: pointer; color: #05050a; margin-top: 10px; }
+        .tab-btn { background: none; color: #888; width: 45%; margin: 5px; font-size: 0.8rem; border: 1px solid transparent; }
+        .tab-active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+        #admin-panel { position: fixed; inset: 0; z-index: 2000; background: #05050a; padding: 20px; display: none; overflow-y: auto; }
+        .u-row { background: var(--glass); padding: 12px; border-radius: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.05); }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body onload="checkLogin()">
+
+    <div id="auth-overlay" class="overlay">
+        <div class="card">
+            <h2 style="color:var(--accent); margin:0 0 15px 0;">Family Shield</h2>
+            
+            <div id="tab-box">
+                <button class="tab-btn tab-active" onclick="setTab('login')">LOGIN</button>
+                <button class="tab-btn" onclick="setTab('reg')">JOIN</button>
+            </div>
+
+            <div id="login-form">
+                <input type="text" id="l-phone" placeholder="Phone Number">
+                <input type="password" id="l-pass" placeholder="Password / Admin PIN">
+                <button onclick="handleAuth()">Sign In</button>
+            </div>
+
+            <div id="reg-form" class="hidden">
+                <input type="file" id="r-photo" accept="image/*" onchange="loadImg(this)">
+                <input type="text" id="r-name" placeholder="Full Name">
+                <input type="text" id="r-phone" placeholder="Phone Number">
+                <input type="password" id="r-pass" placeholder="Create Password">
+                <button onclick="register()">Create Account</button>
+            </div>
+            
+            <p id="msg" style="font-size: 0.8rem; color: #ffca28; margin-top: 15px;"></p>
+        </div>
+    </div>
+
+    <div id="admin-panel">
+        <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="color:var(--accent); margin:0;">Admin Console</h2>
+            <button onclick="logout()" style="width:auto; padding:8px 15px; background:#333; color:white;">Logout</button>
+        </div>
+        <div id="admin-list">Loading members...</div>
+    </div>
+
+    <div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const API = "https://script.google.com/macros/s/AKfycbz634Cqpc3YvNhBOEgkVQPnXARNloKLOcyhjwJ7HcDrJji08-nHKFz_n0-AhlUMh2Y3gg/exec"; 
+    const ADMIN_PIN = "786605";
+    let currentUser = null, photoData = "", activeTab = 'login';
+
+    const map = L.map('map', { zoomControl: false }).setView([30.37, 69.34], 5);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+    function setTab(t) {
+        activeTab = t;
+        document.getElementById('login-form').classList.toggle('hidden', t !== 'login');
+        document.getElementById('reg-form').classList.toggle('hidden', t !== 'reg');
+        document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('tab-active', (t==='login' && i===0) || (t==='reg' && i===1)));
+    }
+
+    function loadImg(el) {
+        const reader = new FileReader();
+        reader.onload = e => photoData = e.target.result;
+        reader.readAsDataURL(el.files[0]);
+    }
+
+    function checkLogin() {
+        const saved = localStorage.getItem('shield_session');
+        if (saved) {
+            currentUser = JSON.parse(saved);
+            if(currentUser.isAdmin) showAdmin();
+            else sync();
+        }
+    }
+
+    async function handleAuth() {
+        const phone = document.getElementById('l-phone').value;
+        const pass = document.getElementById('l-pass').value;
+
+        if (pass === ADMIN_PIN) {
+            currentUser = { isAdmin: true };
+            localStorage.setItem('shield_session', JSON.stringify(currentUser));
+            showAdmin();
+            return;
+        }
+
+        currentUser = { phone, password: pass, action: 'login' };
+        sync();
+    }
+
+    async function register() {
+        const name = document.getElementById('r-name').value;
+        const phone = document.getElementById('r-phone').value;
+        const pass = document.getElementById('r-pass').value;
+        if(!name || !phone || !pass || !photoData) return alert("All fields + photo required");
+        
+        currentUser = { name, phone, password: pass, photo: photoData, action: 'register' };
+        sync();
+    }
+
+    async function sync() {
+        let lat = 0, lng = 0;
+        if (window.AppInventor) {
+            const gps = window.AppInventor.getWebViewString().split(",");
+            if(gps.length === 2) { lat = parseFloat(gps[0]); lng = parseFloat(gps[1]); }
+        }
+
+        try {
+            const res = await fetch(API, { method: 'POST', body: JSON.stringify({...currentUser, lat, lng}) });
+            const data = await res.json();
+            
+            if (data.status === "Approved") {
+                document.getElementById('auth-overlay').classList.add('hidden');
+                localStorage.setItem('shield_session', JSON.stringify(currentUser));
+            } else if (data.status === "Pending") {
+                document.getElementById('msg').innerText = "Waiting for Admin Approval...";
+                document.getElementById('reg-form').classList.add('hidden');
+                document.getElementById('login-form').classList.add('hidden');
+            } else {
+                document.getElementById('msg').innerText = "Status: " + data.status;
+            }
+            currentUser.photo = null; 
+        } catch(e) { console.warn("Syncing..."); }
+        setTimeout(sync, 15000);
+    }
+
+    function showAdmin() {
+        document.getElementById('auth-overlay').classList.add('hidden');
+        document.getElementById('admin-panel').style.display = 'block';
+        loadAdminList();
+    }
+
+    async function loadAdminList() {
+        const res = await fetch(API);
+        const users = await res.json();
+        const list = document.getElementById('admin-list');
+        list.innerHTML = '';
+        users.forEach(u => {
+            const [name, phone, email, lat, lng, time, photo, status] = u;
+            const div = document.createElement('div');
+            div.className = 'u-row';
+            div.innerHTML = `<img src="${photo}" style="width:40px;height:40px;border-radius:50%">
+                <div style="flex:1; font-size:0.8rem"><b>${name}</b><br>${status}</div>
+                <button style="width:auto;padding:5px;font-size:10px;" onclick="updateU('${phone}','Approved')">Approve</button>
+                <button style="width:auto;padding:5px;font-size:10px;background:#f44" onclick="updateU('${phone}','Locked')">Lock</button>`;
+            list.appendChild(div);
+        });
+    }
+
+    async function updateU(phone, newStatus) {
+        await fetch(API, { method: 'POST', body: JSON.stringify({ action: "updateStatus", phone, newStatus }) });
+        loadAdminList();
+    }
+
+    function logout() {
+        localStorage.clear();
+        location.reload();
+    }
+</script>
+</body>
+</html>
