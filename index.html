@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Shield Connect — Family Safety</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<style>
+* { box-sizing: border-box; }
+:root {
+--bg-dark: #0a0e17; --card-dark: #121826; --accent: #00f2ff;
+--danger: #ff4d6d; --text-primary: #f0f3fa; --text-secondary: #8a94a8;
+--border-light: rgba(255, 255, 255, 0.08);
+}
+body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: var(--text-primary); height: 100vh; overflow: hidden; }
+#map { height: 100%; width: 100%; z-index: 1; }
+
+/* UI Elements */
+.overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(10, 14, 23, 0.96); backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: center; }
+.card { background: var(--card-dark); padding: 25px; border-radius: 30px; border: 1px solid var(--border-light); width: 90%; max-width: 360px; text-align: center; }
+input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 50px; border: 1px solid var(--border-light); background: rgba(255,255,255,0.05); color: white; outline: none; }
+button { width: 100%; padding: 12px; background: var(--accent); border: none; border-radius: 50px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+.hidden { display: none !important; }
+
+/* Notification Panel */
+.notif-container {
+background: rgba(18, 24, 38, 0.95); border: 1px solid var(--border-light);
+border-radius: 20px; padding: 15px; margin-bottom: 15px; max-height: 250px; overflow-y: auto;
+}
+.notif-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.notif-item { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; text-align: left; }
+.notif-time { font-size: 0.65rem; color: var(--text-secondary); }
+.clear-btn { background: none; border: 1px solid var(--accent); color: var(--accent); padding: 4px 10px; font-size: 0.7rem; width: auto; margin: 0; }
+
+#admin-panel { position: fixed; inset: 0; z-index: 2000; background: var(--bg-dark); padding: 20px; display: none; overflow-y: auto; }
+.u-row { background: var(--card-dark); padding: 15px; border-radius: 20px; margin-bottom: 10px; display: flex; align-items: center; gap: 15px; border: 1px solid var(--border-light); }
+.logout-btn { position: fixed; bottom: 20px; right: 20px; z-index: 1001; background: var(--card-dark); padding: 10px 20px; border-radius: 50px; color: white; border: 1px solid var(--border-light); cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="auth-overlay" class="overlay">
+<div class="card">
+<h2 style="color:var(--accent);">FAMILY SHIELD</h2>
+<div id="login-form">
+<input type="tel" id="l-phone" placeholder="Phone Number">
+<input type="password" id="l-pass" placeholder="Password / PIN">
+<button onclick="handleAuth()">Sign In</button>
+<p onclick="toggleForm()" style="font-size:0.8rem; cursor:pointer; color:var(--text-secondary); margin-top:15px;">New? Join Family</p>
+</div>
+<div id="reg-form" class="hidden">
+<input type="text" id="r-name" placeholder="Full Name">
+<input type="tel" id="r-phone" placeholder="Phone Number">
+<input type="password" id="r-pass" placeholder="Password">
+<input type="file" id="r-photo" accept="image/*" style="font-size:0.7rem;">
+<button onclick="register()">Create Account</button>
+<p onclick="toggleForm()" style="font-size:0.8rem; cursor:pointer; color:var(--text-secondary); margin-top:15px;">Back to Login</p>
+</div>
+<div id="msg" style="margin-top:10px; font-size:0.8rem;"></div>
+</div>
+</div>
+
+<div id="admin-panel">
+<div class="notif-header">
+<h2 style="color:var(--accent);">Admin Console</h2>
+<button class="clear-btn" onclick="logout()" style="border-color:var(--danger); color:var(--danger);">Logout</button>
+</div>
+
+<div class="notif-container">
+<div class="notif-header">
+<span><i class="fas fa-bell"></i> Notifications</span>
+<button class="clear-btn" onclick="markAsRead()">Clear All</button>
+</div>
+<div id="admin-notifs">No new alerts.</div>
+</div>
+
+<div id="admin-list">Loading members...</div>
+</div>
+
+<div id="user-ui" class="hidden">
+<div style="position:fixed; top:20px; left:20px; z-index:1001; width:280px;">
+<div class="notif-container" id="user-notif-box">
+<div class="notif-header">
+<span><i class="fas fa-bell"></i> Alerts</span>
+<button class="clear-btn" onclick="markAsRead()">Dismiss</button>
+</div>
+<div id="user-notifs">No new alerts.</div>
+</div>
+</div>
+<button class="logout-btn" onclick="logout()">Logout</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API = "https://script.google.com/macros/s/AKfycbwu_MQTZQ_Jfv76-XltF2fxJLdbVc6PWIBCCBT7p9nmJJKODQVjC8LHI2uvfg96J9rr1g/exec"; // PASTE YOUR DEPLOYED URL HERE
+let currentUser = null;
+let map = null;
+let markers = new Map();
+let photoBase64 = "";
+
+// File to Base64
+document.getElementById('r-photo').addEventListener('change', function(e) {
+const reader = new FileReader();
+reader.onload = () => photoBase64 = reader.result;
+reader.readAsDataURL(e.target.files[0]);
+});
+
+function toggleForm() {
+document.getElementById('login-form').classList.toggle('hidden');
+document.getElementById('reg-form').classList.toggle('hidden');
+}
+
+async function handleAuth() {
+const phone = document.getElementById('l-phone').value;
+const pass = document.getElementById('l-pass').value;
+if(pass === "786605") {
+currentUser = { isAdmin: true, phone: "ADMIN" };
+showAdmin();
+return;
+}
+const res = await fetch(API, { method: 'POST', body: JSON.stringify({ action: "login", phone, password: pass })});
+const data = await res.json();
+if(data.status === "Approved") {
+currentUser = { phone, password: pass, isAdmin: false };
+enterDashboard();
+} else { alert(data.status); }
+}
+
+async function register() {
+const payload = {
+action: "register",
+name: document.getElementById('r-name').value,
+phone: document.getElementById('r-phone').value,
+password: document.getElementById('r-pass').value,
+photo: photoBase64,
+lat: 0, lng: 0
+};
+const res = await fetch(API, { method: 'POST', body: JSON.stringify(payload)});
+const data = await res.json();
+alert("Registration: " + data.status);
+toggleForm();
+}
+
+function enterDashboard() {
+document.getElementById('auth-overlay').classList.add('hidden');
+document.getElementById('user-ui').classList.remove('hidden');
+initMap();
+startTracking();
+setInterval(sync, 10000);
+}
+
+function showAdmin() {
+document.getElementById('auth-overlay').classList.add('hidden');
+document.getElementById('admin-panel').style.display = 'block';
+loadAdminData();
+setInterval(loadAdminData, 15000);
+}
+
+async function sync() {
+fetchNotifs();
+const res = await fetch(API + "?request=members&phone=" + currentUser.phone);
+const members = await res.json();
+updateMap(members);
+}
+
+async function fetchNotifs() {
+const res = await fetch(API + "?request=notifications&phone=" + currentUser.phone);
+const data = await res.json();
+const container = currentUser.isAdmin ? "admin-notifs" : "user-notifs";
+document.getElementById(container).innerHTML = data.length ? data.map(n => `
+<div class="notif-item">
+<strong>${n.sender}</strong>: ${n.msg} <br>
+<span class="notif-time">${new Date(n.time).toLocaleTimeString()}</span>
+</div>
+`).join('') : "No new alerts.";
+}
+
+async function markAsRead() {
+await fetch(API, { method: 'POST', body: JSON.stringify({ action: "markRead", phone: currentUser.phone })});
+fetchNotifs();
+}
+
+async function loadAdminData() {
+fetchNotifs();
+const res = await fetch(API + "?admin=true");
+const users = await res.json();
+document.getElementById('admin-list').innerHTML = users.map(u => `
+<div class="u-row">
+<img src="${u[6]}" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">
+<div style="flex:1"><b>${u[0]}</b> (${u[7]})<br><small>${u[1]}</small></div>
+<button onclick="updateStatus('${u[1]}','Approved')" style="width:auto; padding:5px 10px; font-size:0.7rem;">Approve</button>
+</div>
+`).join('');
+}
+
+async function updateStatus(phone, status) {
+await fetch(API, { method: 'POST', body: JSON.stringify({ action: "updateStatus", phone, newStatus: status })});
+loadAdminData();
+}
+
+function initMap() {
+map = L.map('map').setView([30, 70], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+}
+
+function startTracking() {
+navigator.geolocation.watchPosition(pos => {
+const { latitude, longitude } = pos.coords;
+fetch(API, { method: 'POST', body: JSON.stringify({ action: "updateLocation", phone: currentUser.phone, lat: latitude, lng: longitude })});
+});
+}
+
+function updateMap(members) {
+members.forEach(m => {
+if(markers.has(m.phone)) markers.get(m.phone).setLatLng([m.lat, m.lng]);
+else markers.set(m.phone, L.marker([m.lat, m.lng]).addTo(map).bindPopup(m.name));
+});
+}
+
+function logout() { location.reload(); }
+</script>
+</body>
+</html>
