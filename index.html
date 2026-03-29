@@ -94,7 +94,7 @@ border-radius: 20px; padding: 15px; margin-bottom: 15px; max-height: 250px; over
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const API = "https://script.google.com/macros/s/AKfycbz-f2P8t9hyrEYNqDCVAL4my7a7lzaNgMiT6C2UZ3fVZnSlcwhNt0NF85H_qH7Ja5zEUw/exec"; // PASTE YOUR DEPLOYED URL HERE
+const API = "https://script.google.com/macros/s/AKfycbyZLExUNMSF2NSvOtTUJ-XK3VhNl984xkfjr5RxpVui3DAPbtH0ZbxI2O61V1OO19nH/exec"; // PASTE YOUR DEPLOYED URL HERE
 let currentUser = null;
 let map = null;
 let markers = new Map();
@@ -129,20 +129,53 @@ enterDashboard();
 }
 
 async function register() {
+const name = document.getElementById('r-name').value.trim();
+let phone = document.getElementById('r-phone').value.trim();
+const password = document.getElementById('r-pass').value;
+
+if(!name) { setMessage("❌ Full name required", true); return; }
+if(!phone) { setMessage("❌ Phone number required", true); return; }
+if(!password || password.length < 4) { setMessage("❌ Password (min 4 chars)", true); return; }
+if(!selectedPhotoBase64) { setMessage("📸 Please upload profile photo", true); return; }
+
+const cleanPhone = phone.replace(/-/g, '');
+const regBtn = document.querySelector('#reg-form button');
+const originalText = regBtn.innerHTML;
+regBtn.innerHTML = '<i class="fas fa-spinner fa-pulse"></i> Registering...';
+regBtn.disabled = true;
+
+try {
 const payload = {
 action: "register",
-name: document.getElementById('r-name').value,
-phone: document.getElementById('r-phone').value,
-password: document.getElementById('r-pass').value,
-photo: photoBase64,
-lat: 0, lng: 0
+name: name,
+phone: cleanPhone,
+password: password,
+photo: selectedPhotoBase64, // This must be the dataURL from the reader
+lat: lastSentLocation.lat || 0,
+lng: lastSentLocation.lng || 0
 };
-const res = await fetch(API, { method: 'POST', body: JSON.stringify(payload)});
-const data = await res.json();
-alert("Registration: " + data.status);
-toggleForm();
-}
 
+const response = await fetch(API, {
+method: 'POST',
+headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Use text/plain to avoid pre-flight CORS issues
+body: JSON.stringify(payload)
+});
+
+const data = await response.json();
+
+if(data.status === "Pending") {
+setMessage("⏳ Registration sent! Await admin approval.", false);
+setTimeout(() => setTab('login'), 3000);
+} else {
+setMessage(data.status || "Registration failed.", true);
+}
+} catch(err) {
+setMessage("Error: " + err.message, true);
+} finally {
+regBtn.innerHTML = originalText;
+regBtn.disabled = false;
+}
+}
 function enterDashboard() {
 document.getElementById('auth-overlay').classList.add('hidden');
 document.getElementById('user-ui').classList.remove('hidden');
