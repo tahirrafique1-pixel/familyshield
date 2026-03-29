@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Shield Connect — Family Safety</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none; /* better mobile feel */
+        }
+        :root {
+            --glass: rgba(255, 255, 255, 0.08);
+            --glass2: rgba(255, 255, 255, 0.03);
+            --accent: #00f2ff;
+            --accent-glow: rgba(0, 242, 255, 0.3);
+            --blur: blur(20px);
+            --danger: #ff4d6d;
+        }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+            background: #05050a;
+            color: #f0f3fa;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+            z-index: 1;
+            filter: brightness(0.9) contrast(1.05);
+        }
+        /* Overlays */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(5, 5, 10, 0.92);
+            backdrop-filter: var(--blur);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            transition: all 0.2s ease;
+        }
+        .card {
+            background: rgba(10, 12, 25, 0.75);
+            backdrop-filter: blur(12px);
+            padding: 28px 22px;
+            border-radius: 36px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            width: 100%;
+            max-width: 360px;
+            text-align: center;
+            box-shadow: 0 25px 40px rgba(0,0,0,0.5);
+        }
+        input, .file-label {
+            width: 100%;
+            padding: 12px 14px;
+            margin: 8px 0;
+            border-radius: 60px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(20, 22, 40, 0.7);
+            color: white;
+            font-size: 0.95rem;
+            transition: 0.2s;
+            outline: none;
+        }
+        input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent);
+            border: none;
+            border-radius: 60px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            color: #05050a;
+            margin-top: 12px;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+        button:active { transform: scale(0.97); }
+        .tab-btn {
+            background: transparent;
+            color: #aaa;
+            width: 45%;
+            margin: 5px 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: none;
+            border-bottom: 2px solid transparent;
+            border-radius: 0px;
+            padding: 8px 0;
+        }
+        .tab-active {
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+            background: transparent;
+        }
+        #admin-panel {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            background: #05070f;
+            padding: 20px;
+            display: none;
+            overflow-y: auto;
+            backdrop-filter: blur(4px);
+        }
+        .u-row {
+            background: var(--glass);
+            padding: 12px 16px;
+            border-radius: 28px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            border: 1px solid rgba(255,255,255,0.06);
+            backdrop-filter: blur(4px);
+        }
+        .hidden { display: none !important; }
+        .avatar-preview {
+            width: 80px;
+            height: 80px;
+            border-radius: 100%;
+            background: #1e1f2c;
+            margin: 0 auto 12px auto;
+            border: 2px solid var(--accent);
+            object-fit: cover;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            color: #aaa;
+            overflow: hidden;
+        }
+        .avatar-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .file-upload-wrapper {
+            position: relative;
+            margin: 8px 0;
+        }
+        .custom-file-btn {
+            background: rgba(0,242,255,0.2);
+            border: 1px dashed var(--accent);
+            border-radius: 60px;
+            padding: 10px;
+            font-size: 0.8rem;
+            text-align: center;
+            cursor: pointer;
+            color: var(--accent);
+            width: 100%;
+        }
+        #r-photo-input {
+            display: none;
+        }
+        .msg-alert {
+            font-size: 0.75rem;
+            margin-top: 12px;
+            color: #ffb347;
+            background: rgba(0,0,0,0.5);
+            padding: 6px 12px;
+            border-radius: 40px;
+        }
+        .badge {
+            font-size: 0.7rem;
+            background: #1f2a3a;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+        .admin-btn {
+            width: auto;
+            padding: 6px 14px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            background: #2c3e66;
+            margin: 0 4px;
+        }
+        .admin-btn.danger {
+            background: #9e2a3e;
+        }
+        .loading {
+            opacity: 0.7;
+        }
+        ::-webkit-scrollbar { width: 4px; }
+    </style>
+</head>
+<body onload="checkLogin()">
+
+    <!-- AUTH MODAL -->
+    <div id="auth-overlay" class="overlay">
+        <div class="card">
+            <h2 style="color:var(--accent); margin:0 0 6px 0;">⚡ FAMILY SHIELD</h2>
+            <p style="font-size:0.7rem; margin-bottom:20px;">real-time safety net</p>
+
+            <div id="tab-box">
+                <button class="tab-btn tab-active" onclick="setTab('login')">LOGIN</button>
+                <button class="tab-btn" onclick="setTab('reg')">JOIN CIRCLE</button>
+            </div>
+
+            <!-- LOGIN FORM -->
+            <div id="login-form">
+                <input type="tel" id="l-phone" placeholder="Phone number" autocomplete="off">
+                <input type="password" id="l-pass" placeholder="Password / Admin PIN">
+                <button onclick="handleAuth()">→ Sign In →</button>
+            </div>
+
+            <!-- REGISTRATION FORM with IMAGE PREVIEW -->
+            <div id="reg-form" class="hidden">
+                <!-- Image preview circle -->
+                <div id="imagePreviewCircle" class="avatar-preview" onclick="document.getElementById('r-photo-input').click()">
+                    <span style="font-size: 2rem;">📷</span>
+                </div>
+                <div class="file-upload-wrapper">
+                    <input type="file" id="r-photo-input" accept="image/jpeg,image/png,image/jpg" onchange="handleImageUpload(this)">
+                    <div class="custom-file-btn" onclick="document.getElementById('r-photo-input').click()">
+                        📸 Upload profile photo
+                    </div>
+                </div>
+                <input type="text" id="r-name" placeholder="Full Name" autocomplete="off">
+                <input type="tel" id="r-phone" placeholder="Phone Number (unique)" autocomplete="off">
+                <input type="password" id="r-pass" placeholder="Create password">
+                <button onclick="register()">🔒 Create Account & Request Access</button>
+            </div>
+            
+            <div id="msg" class="msg-alert"></div>
+        </div>
+    </div>
+
+    <!-- ADMIN PANEL -->
+    <div id="admin-panel">
+        <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap:wrap;">
+            <h2 style="color:var(--accent); margin:0;">🛡️ Admin Shield</h2>
+            <button onclick="logout()" style="width:auto; padding:8px 20px; background:#2a2a3a; color:white;">Exit</button>
+        </div>
+        <div id="admin-list" style="margin-top: 12px;">📡 Loading family members...</div>
+    </div>
+
+    <div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // ---------- CONFIG ----------
+    // IMPORTANT: Replace with your actual Google Apps Script Web App URL
+    const API = "https://script.google.com/macros/s/AKfycbz634Cqpc3YvNhBOEgkVQPnXARNloKLOcyhjwJ7HcDrJji08-nHKFz_n0-AhlUMh2Y3gg/exec";
+    const ADMIN_PIN = "786605";
+    
+    let currentUser = null;
+    let activeTab = 'login';
+    let selectedPhotoBase64 = "";      // store base64 image data for registration
+    let locationWatchId = null;
+    let mapMarkers = new Map();          // phone -> marker
+
+    // ---------- DOM elements ----------
+    const authOverlay = document.getElementById('auth-overlay');
+    const adminPanel = document.getElementById('admin-panel');
+    const mapDiv = document.getElementById('map');
+    let mapInstance = null;
+    
+    // init map
+    function initMap() {
+        if(mapInstance) return;
+        mapInstance = L.map('map', { zoomControl: false }).setView([30.3753, 69.3451], 5);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+        }).addTo(mapInstance);
+        L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
+    }
+
+    // Helper messages
+    function setMessage(msg, isError = false) {
+        const msgDiv = document.getElementById('msg');
+        if(msgDiv) {
+            msgDiv.innerText = msg;
+            msgDiv.style.color = isError ? "#ff9f6e" : "#b9fbc0";
+            setTimeout(() => {
+                if(document.getElementById('msg')?.innerText === msg) 
+                    msgDiv.innerText = "";
+            }, 4000);
+        }
+    }
+
+    // Tab switching
+    function setTab(t) {
+        activeTab = t;
+        document.getElementById('login-form').classList.toggle('hidden', t !== 'login');
+        document.getElementById('reg-form').classList.toggle('hidden', t !== 'reg');
+        const btns = document.querySelectorAll('.tab-btn');
+        if(btns[0]) btns[0].classList.toggle('tab-active', t === 'login');
+        if(btns[1]) btns[1].classList.toggle('tab-active', t === 'reg');
+        setMessage("");
+        if(t === 'reg') {
+            // reset image preview & data
+            selectedPhotoBase64 = "";
+            const previewDiv = document.getElementById('imagePreviewCircle');
+            if(previewDiv) {
+                previewDiv.innerHTML = `<span style="font-size: 2rem;">📷</span>`;
+            }
+            document.getElementById('r-photo-input').value = "";
+        }
+    }
+
+    // Handle image upload -> base64 & preview
+    function handleImageUpload(inputElement) {
+        const file = inputElement.files[0];
+        if(!file) {
+            selectedPhotoBase64 = "";
+            const previewDiv = document.getElementById('imagePreviewCircle');
+            if(previewDiv) previewDiv.innerHTML = `<span style="font-size: 2rem;">📷</span>`;
+            return;
+        }
+        if(!file.type.match('image.*')) {
+            setMessage("Please select an image file (JPG/PNG)", true);
+            inputElement.value = "";
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            selectedPhotoBase64 = e.target.result;
+            // update preview circle
+            const previewContainer = document.getElementById('imagePreviewCircle');
+            if(previewContainer) {
+                previewContainer.innerHTML = `<img src="${selectedPhotoBase64}" alt="preview" style="width:100%;height:100%;object-fit:cover;">`;
+            }
+        };
+        reader.onerror = () => {
+            setMessage("Failed to read image", true);
+            selectedPhotoBase64 = "";
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // ----- GEOLOCATION (browser) + send location to server periodically (if logged in)
+    let lastSentLocation = { lat: 0, lng: 0 };
+    function startLocationTracking() {
+        if(!navigator.geolocation) return;
+        if(locationWatchId !== null) navigator.geolocation.clearWatch(locationWatchId);
+        locationWatchId = navigator.geolocation.watchPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                lastSentLocation = { lat, lng };
+                if(currentUser && !currentUser.isAdmin) {
+                    sendLocationToServer(lat, lng);
+                }
+                // update map if we have markers?
+                if(mapInstance && currentUser && !currentUser.isAdmin) {
+                    // just update own marker later (handled by sync)
+                }
+            },
+            (err) => { console.warn("Geo error:", err.message); },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+        );
+    }
+
+    async function sendLocationToServer(lat, lng) {
+        if(!currentUser || currentUser.isAdmin) return;
+        try {
+            await fetch(API, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: "updateLocation",
+                    phone: currentUser.phone,
+                    password: currentUser.password,
+                    lat: lat,
+                    lng: lng
+                })
+            });
+        } catch(e) { /* silent */ }
+    }
+
+    // periodic sync for normal user: fetch member list, update map, and also push location
+    let syncInterval = null;
+    async function syncUserData() {
+        if(!currentUser || currentUser.isAdmin) return;
+        try {
+            // Send location first (latest)
+            if(lastSentLocation.lat !== 0 || lastSentLocation.lng !== 0) {
+                await sendLocationToServer(lastSentLocation.lat, lastSentLocation.lng);
+            }
+            // then fetch all approved members (to show on map)
+            const res = await fetch(API + "?request=members&phone=" + encodeURIComponent(currentUser.phone));
+            const members = await res.json();
+            updateMapWithMembers(members);
+        } catch(e) { console.warn("Sync error", e); }
+    }
+
+    function updateMapWithMembers(members) {
+        if(!mapInstance) initMap();
+        // members format: each object { name, phone, lat, lng, photo, status }
+        // remove markers for users not present or status changed
+        const currentPhones = new Set();
+        members.forEach(m => {
+            if(m.status === "Approved" && m.lat && m.lng && !isNaN(parseFloat(m.lat)) && !isNaN(parseFloat(m.lng))) {
+                currentPhones.add(m.phone);
+                const lat = parseFloat(m.lat);
+                const lng = parseFloat(m.lng);
+                let marker = mapMarkers.get(m.phone);
+                if(!marker) {
+                    const iconHtml = L.divIcon({
+                        html: `<div style="background: #00f2ff; width: 12px; height: 12px; border-radius: 50%; border:2px solid white; box-shadow:0 0 12px cyan;"></div>`,
+                        iconSize: [12,12],
+                        className: 'custom-marker'
+                    });
+                    marker = L.marker([lat, lng], { icon: iconHtml }).addTo(mapInstance);
+                    marker.bindPopup(`<b>${m.name || "Member"}</b><br>📍 live`);
+                    mapMarkers.set(m.phone, marker);
+                } else {
+                    marker.setLatLng([lat, lng]);
+                }
+            } else {
+                // if not approved or invalid coords, remove marker if exists
+                if(mapMarkers.has(m.phone)) {
+                    mapInstance.removeLayer(mapMarkers.get(m.phone));
+                    mapMarkers.delete(m.phone);
+                }
+            }
+        });
+        // remove markers for phones no longer in list
+        for(let [phone, marker] of mapMarkers.entries()) {
+            if(!currentPhones.has(phone)) {
+                mapInstance.removeLayer(marker);
+                mapMarkers.delete(phone);
+            }
+        }
+        // center map if first time?
+        if(members.length && mapInstance.getCenter().lat === 30.37) {
+            const firstValid = members.find(m => m.lat && m.lng);
+            if(firstValid) mapInstance.setView([parseFloat(firstValid.lat), parseFloat(firstValid.lng)], 10);
+        }
+    }
+
+    // ------ AUTH & REGISTRATION FIXED ------
+    async function register() {
+        const name = document.getElementById('r-name').value.trim();
+        const phone = document.getElementById('r-phone').value.trim();
+        const password = document.getElementById('r-pass').value;
+        
+        // CRITICAL FIX: proper validation including image data
+        if(!name) { setMessage("❌ Full name is required", true); return; }
+        if(!phone) { setMessage("❌ Phone number required", true); return; }
+        if(!password || password.length < 4) { setMessage("❌ Password must be at least 4 characters", true); return; }
+        if(!selectedPhotoBase64) { setMessage("📸 Please upload a profile photo (click on camera icon)", true); return; }
+        
+        // validate phone digits (basic)
+        if(phone.length < 5) { setMessage("❌ Valid phone number needed", true); return; }
+        
+        // show loading effect
+        const regBtn = document.querySelector('#reg-form button');
+        const originalText = regBtn.innerText;
+        regBtn.innerText = "⏳ Registering...";
+        regBtn.disabled = true;
+        
+        try {
+            // Build registration payload
+            const payload = {
+                action: "register",
+                name: name,
+                phone: phone,
+                password: password,
+                photo: selectedPhotoBase64,
+                lat: lastSentLocation.lat || 0,
+                lng: lastSentLocation.lng || 0
+            };
+            
+            const response = await fetch(API, {
+                method: 'POST',
+                body: JSON.stringify(payload),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const data = await response.json();
+            if(data.status === "Approved" || data.status === "Pending") {
+                // store minimal session to wait approval
+                currentUser = { phone: phone, password: password, isAdmin: false, pending: data.status === "Pending" };
+                localStorage.setItem('shield_session', JSON.stringify(currentUser));
+                if(data.status === "Approved") {
+                    authOverlay.classList.add('hidden');
+                    initMap();
+                    startLocationTracking();
+                    if(syncInterval) clearInterval(syncInterval);
+                    syncInterval = setInterval(() => syncUserData(), 12000);
+                    syncUserData();
+                    setMessage("✅ Welcome! Family map active.");
+                } else {
+                    // PENDING MODE: show waiting screen
+                    document.getElementById('msg').innerText = "⏳ Registration sent to Admin. Await approval...";
+                    document.getElementById('login-form').classList.add('hidden');
+                    document.getElementById('reg-form').classList.add('hidden');
+                    // we keep overlay visible but show pending message
+                    setMessage("🛡️ Request submitted. Admin will approve you soon.", false);
+                }
+            } else {
+                setMessage(data.status || "Registration failed. Phone might exist.", true);
+                regBtn.innerText = originalText;
+                regBtn.disabled = false;
+            }
+        } catch (err) {
+            console.error(err);
+            setMessage("Network error. Please try again.", true);
+            regBtn.innerText = originalText;
+            regBtn.disabled = false;
+        }
+    }
+    
+    async function handleAuth() {
+        const phone = document.getElementById('l-phone').value.trim();
+        const pass = document.getElementById('l-pass').value;
+        
+        if(!phone || !pass) { setMessage("Phone and password required", true); return; }
+        
+        // Admin login shortcut
+        if(pass === ADMIN_PIN) {
+            currentUser = { isAdmin: true };
+            localStorage.setItem('shield_session', JSON.stringify(currentUser));
+            authOverlay.classList.add('hidden');
+            showAdmin();
+            return;
+        }
+        
+        // Normal user login: send verify request
+        const loginBtn = document.querySelector('#login-form button');
+        const originalLabel = loginBtn.innerText;
+        loginBtn.innerText = "Authenticating...";
+        loginBtn.disabled = true;
+        
+        try {
+            const res = await fetch(API, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: "login",
+                    phone: phone,
+                    password: pass,
+                    lat: lastSentLocation.lat || 0,
+                    lng: lastSentLocation.lng || 0
+                })
+            });
+            const data = await res.json();
+            if(data.status === "Approved") {
+                currentUser = { phone: phone, password: pass, isAdmin: false };
+                localStorage.setItem('shield_session', JSON.stringify(currentUser));
+                authOverlay.classList.add('hidden');
+                initMap();
+                startLocationTracking();
+                if(syncInterval) clearInterval(syncInterval);
+                syncInterval = setInterval(() => syncUserData(), 12000);
+                syncUserData();
+                setMessage("📍 Shield active. Family locations visible.");
+            } else {
+                setMessage(data.status === "Pending" ? "⏳ Account pending admin approval." : "Invalid credentials or locked account", true);
+            }
+        } catch(e) {
+            setMessage("Server unreachable, try again.", true);
+        } finally {
+            loginBtn.innerText = originalLabel;
+            loginBtn.disabled = false;
+        }
+    }
+    
+    // Admin functions
+    async function showAdmin() {
+        authOverlay.classList.add('hidden');
+        adminPanel.style.display = 'block';
+        if(mapInstance) mapInstance.remove();
+        mapInstance = null;
+        loadAdminList();
+        if(syncInterval) clearInterval(syncInterval);
+    }
+    
+    async function loadAdminList() {
+        const container = document.getElementById('admin-list');
+        container.innerHTML = '<div style="text-align:center;">⏳ Fetching members...</div>';
+        try {
+            const response = await fetch(API + "?admin=true");
+            const users = await response.json();
+            if(!users.length) {
+                container.innerHTML = '<div>✨ No members yet. Share join link.</div>';
+                return;
+            }
+            container.innerHTML = '';
+            users.forEach(user => {
+                // user array: [name, phone, email, lat, lng, timestamp, photo, status]
+                const name = user[0] || "No name";
+                const phone = user[1] || "";
+                const lat = user[3] || "0";
+                const lng = user[4] || "0";
+                const photo = user[6] || "";
+                const status = user[7] || "Pending";
+                
+                const row = document.createElement('div');
+                row.className = 'u-row';
+                row.innerHTML = `
+                    <div style="width:44px;height:44px;border-radius:50%;background:#1a1e2a;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                        ${photo ? `<img src="${photo}" style="width:100%;height:100%;object-fit:cover;">` : '👤'}
+                    </div>
+                    <div style="flex:1;">
+                        <div><strong>${escapeHtml(name)}</strong> <span class="badge">${status}</span></div>
+                        <div style="font-size:0.65rem; color:#aaa;">${phone}</div>
+                        <div style="font-size:0.6rem;">📍 ${parseFloat(lat).toFixed(4) || '—'}, ${parseFloat(lng).toFixed(4) || '—'}</div>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button class="admin-btn" onclick="updateMemberStatus('${phone}','Approved')">✓ Approve</button>
+                        <button class="admin-btn danger" onclick="updateMemberStatus('${phone}','Locked')">🔒 Lock</button>
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        } catch(e) {
+            container.innerHTML = '<div>⚠️ Error loading admin data. Check CORS / script URL.</div>';
+            console.error(e);
+        }
+    }
+    
+    async function updateMemberStatus(phone, newStatus) {
+        try {
+            await fetch(API, {
+                method: 'POST',
+                body: JSON.stringify({ action: "updateStatus", phone: phone, newStatus: newStatus })
+            });
+            setMessage(`✅ ${phone} updated to ${newStatus}`, false);
+            loadAdminList();
+        } catch(e) {
+            setMessage("Update failed", true);
+        }
+    }
+    
+    function logout() {
+        if(syncInterval) clearInterval(syncInterval);
+        if(locationWatchId) navigator.geolocation.clearWatch(locationWatchId);
+        localStorage.clear();
+        location.reload();
+    }
+    
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    // check saved session on load
+    async function checkLogin() {
+        initMap();
+        const saved = localStorage.getItem('shield_session');
+        if(saved) {
+            try {
+                currentUser = JSON.parse(saved);
+                if(currentUser.isAdmin) {
+                    authOverlay.classList.add('hidden');
+                    showAdmin();
+                } else if(currentUser.phone) {
+                    // revalidate with server: check status
+                    const resp = await fetch(API, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: "checkStatus", phone: currentUser.phone, password: currentUser.password })
+                    });
+                    const data = await resp.json();
+                    if(data.status === "Approved") {
+                        authOverlay.classList.add('hidden');
+                        startLocationTracking();
+                        if(syncInterval) clearInterval(syncInterval);
+                        syncInterval = setInterval(() => syncUserData(), 12000);
+                        syncUserData();
+                    } else {
+                        // session invalid, remove and show login
+                        localStorage.removeItem('shield_session');
+                        currentUser = null;
+                        authOverlay.classList.remove('hidden');
+                        setMessage("Session expired or account locked. Re-login.", true);
+                    }
+                } else {
+                    authOverlay.classList.remove('hidden');
+                }
+            } catch(e) { authOverlay.classList.remove('hidden'); }
+        } else {
+            authOverlay.classList.remove('hidden');
+        }
+    }
+    
+    // global exposure for admin functions
+    window.updateMemberStatus = updateMemberStatus;
+    window.setTab = setTab;
+    window.handleAuth = handleAuth;
+    window.register = register;
+    window.logout = logout;
+    window.handleImageUpload = handleImageUpload;
+    window.checkLogin = checkLogin;
+    
+    // get initial location if possible
+    if(navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+            lastSentLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        }, ()=> {}, { timeout: 5000 });
+    }
+</script>
+</body>
+</html>
